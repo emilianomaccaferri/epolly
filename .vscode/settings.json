@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "stdlib.h": "c",
+        "unistd.h": "c",
+        "server.h": "c",
+        "epoll.h": "c"
+    }
+}
