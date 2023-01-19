@@ -82,6 +82,7 @@ server* server_init(
     http_server->connection_events = malloc(sizeof(struct epoll_event) * http_server->max_connection_events);
     http_server->active = false;
     http_server->num_handlers = num_handlers;
+    http_server->selector = 0;
     http_server->handlers = (handler *) malloc(sizeof(handler) * http_server->num_handlers);
 
     if(http_server->epoll_fd < 0){
@@ -104,8 +105,7 @@ server* server_init(
 
     /* initialize handlers */
     for(int i = 0; i < http_server->num_handlers; i++){
-        handler h = http_server->handlers[i];
-        handler_init(&h, max_epoll_handler_queue_size, request_buffer_size, max_request_size);
+        handler_init(&http_server->handlers[i], max_epoll_handler_queue_size, request_buffer_size, max_request_size);
     }
 
     return http_server;
@@ -147,10 +147,14 @@ void server_on_connection(server* server){
     client_event.events = EPOLLIN | EPOLLET; // edge-triggered mode for the current descriptor (EAGAIN)
     client_event.data.fd = client_fd;
 
-    if(epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0){ // adding a new epoll (EPOLL_CTL_ADD)
+    handler selected_handler = server->handlers[server->selector];
+
+    if(epoll_ctl(selected_handler.epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0){ // adding a new epoll (EPOLL_CTL_ADD)
         perror("cannot add client descriptor to epoll");
         exit(-1);
     }
+
+    server->selector = (server->selector + 1) % server->num_handlers;
                     
     // thanks for connecting!
 

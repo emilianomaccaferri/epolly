@@ -1,9 +1,27 @@
-all: server server_debug
-server:
-	mkdir -p bin
-	gcc -Wall -Wextra -c main.c lib/connection_context.c lib/handler.c lib/server.c lib/utils.c
-	gcc -g *.o -o bin/server
+TARGET = bin/epolly
+LIBS = -lm
+CC = gcc
+CFLAGS = -g -Wall
+
+.PHONY: default all clean
+
+default: $(TARGET)
+all: default
+
+OBJECTS = $(patsubst %.c, %.o, $(wildcard *.c)) $(patsubst lib/%.c, lib/%.o, $(wildcard lib/*.c))
+HEADERS = $(wildcard *.h)
+
+%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+.PRECIOUS: $(TARGET) $(OBJECTS)
+
+$(TARGET): $(OBJECTS)
+	$(CC) -g $(OBJECTS) -Wall $(LIBS) -o $@
 
 clean:
-	rm *.o
-	rm bin/server
+	-rm -f lib/*.o
+	-rm -f *.o
+	-rm -f $(TARGET)
+run:
+	./bin/epolly

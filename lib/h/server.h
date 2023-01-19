@@ -21,6 +21,7 @@ typedef struct {
     int max_connection_events;
     int max_request_size;
     int num_handlers;
+    int selector; // this will be the index of the last accessed handler
     struct epoll_event* connection_events;
     handler* handlers;
     bool active;

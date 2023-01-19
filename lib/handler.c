@@ -95,6 +95,7 @@ void *handler_process_request(void* h){
                 
             }else if (received_bytes == 0){
                 
+                printf("client on descriptor %d disconnected\n", current_handler->events[i].data.fd);
                 close(current_handler->events[i].data.fd);
                 epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_DEL, current_handler->events[i].data.fd, NULL);
 
@@ -104,6 +105,8 @@ void *handler_process_request(void* h){
 
     }
 
+    pthread_exit(0);
+
 }
 
 void handler_init(handler* handler, int max_events, int buf_size, int max_request_size){
@@ -111,9 +114,10 @@ void handler_init(handler* handler, int max_events, int buf_size, int max_reques
     handler->thread = (pthread_t*) malloc(sizeof(pthread_t));
     handler->active = true;
     handler->max_events = max_events;
-    handler->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    handler->epoll_fd = epoll_create(max_events);
     handler->request_buffer_size = buf_size;
     handler->max_request_size = max_request_size;
+    handler->events = malloc(sizeof(struct epoll_event) * handler->max_events);
     
     pthread_create(handler->thread, NULL, handler_process_request, (void*) handler);
 

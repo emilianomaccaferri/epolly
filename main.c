@@ -21,4 +21,6 @@ int main(void){
 
     server_loop(http_server);
 
+    return 0;
+
 }
