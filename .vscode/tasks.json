@@ -3,13 +3,14 @@
         {
             "type": "cppbuild",
             "label": "C/C++: gcc-11 build active file",
-            "command": "/usr/bin/gcc-11",
+            "command": "gcc",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
+                "-I./",
                 "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${fileDirname}/bin/${fileBasenameNoExtension}"
             ],
             "options": {
                 "cwd": "${fileDirname}"

@@ -1,5 +1,8 @@
+#include "h/utils.h"
 #include <fcntl.h>
-#include "utils.h"
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
 
 void make_nonblocking(int fd){
 

@@ -1,9 +1,14 @@
+#include "h/server.h"
+#include "h/handler.h"
+#include "h/utils.h"
 #include <sys/socket.h>
 #include <unistd.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
 #include <errno.h>
-#include "server.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
 
 static int create_socket(short port);
 
@@ -11,17 +16,14 @@ static int create_socket(short port){
 
     int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     int socket_opt = 1;
-    int socket_flags;
-    struct sockaddr_in server_address, client_address;
+    struct sockaddr_in server_address;
 
     if(socket_fd < 0){
         perror("error while opening socket\n");
         exit(-1);
     } 
 
-    // avoid EADDRINUSE
-
-    int opt = 1;
+    // avoid spurious EADDRINUSE
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_opt, sizeof(socket_opt)) < 0) {
         perror("error while setting socket options\n");
         exit(-1); 
@@ -56,7 +58,14 @@ static int create_socket(short port){
 
 }
 
-server* server_init(short port, int max_events){
+server* server_init(
+        short port, 
+        int max_events, 
+        int num_handlers,
+        int max_epoll_handler_queue_size,
+        int request_buffer_size,
+        int max_request_size
+    ){
 
     /*
         this creates a file descriptor that serves as an endpoint for communication; 
@@ -65,13 +74,15 @@ server* server_init(short port, int max_events){
         since this socket will support a single protocol, the "protocol" argument is set to 0.        
         
     */
-    server* http_server = malloc(sizeof(server));
+    server* http_server = (server *) malloc(sizeof(server));
 
-    http_server->max_events = max_events;
+    http_server->max_connection_events = max_events;
     http_server->socket_fd = create_socket(port);
     http_server->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    http_server->events = malloc(sizeof(struct epoll_event) * http_server->max_events);
+    http_server->connection_events = malloc(sizeof(struct epoll_event) * http_server->max_connection_events);
     http_server->active = false;
+    http_server->num_handlers = num_handlers;
+    http_server->handlers = (handler *) malloc(sizeof(handler) * http_server->num_handlers);
 
     if(http_server->epoll_fd < 0){
         perror("cannot create epoll\n");
@@ -91,7 +102,57 @@ server* server_init(short port, int max_events){
 
     }
 
+    /* initialize handlers */
+    for(int i = 0; i < http_server->num_handlers; i++){
+        handler h = http_server->handlers[i];
+        handler_init(&h, max_epoll_handler_queue_size, request_buffer_size, max_request_size);
+    }
+
     return http_server;
+
+}
+
+void server_on_connection(server* server){
+
+    /* 
+        a new connection is being notified!
+        i should handle it!
+    */
+    struct sockaddr_in client_in;
+    int client_len = sizeof(client_in);
+    
+    int client_fd = accept(server->socket_fd, (struct sockaddr *) &client_in, (socklen_t *) &client_len);
+
+    if(client_fd < 0){
+        if(errno != EAGAIN || errno != EWOULDBLOCK){
+            perror("error while accepting\n");
+            exit(-1);
+        }
+    }
+
+    /* 
+        let's make a new epoll, only that, this time, we are going to monitor the client
+        that just connected!
+    */
+    
+    /*
+        client descriptor *must* be non-blocking because
+        we need to wait for EAGAIN (or EWOULDBLOCK) to drain
+        the request (and of course we need non-blocking io). 
+    */
+    make_nonblocking(client_fd);
+
+    struct epoll_event client_event;
+    
+    client_event.events = EPOLLIN | EPOLLET; // edge-triggered mode for the current descriptor (EAGAIN)
+    client_event.data.fd = client_fd;
+
+    if(epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0){ // adding a new epoll (EPOLL_CTL_ADD)
+        perror("cannot add client descriptor to epoll");
+        exit(-1);
+    }
+                    
+    // thanks for connecting!
 
 }
 
@@ -101,108 +162,14 @@ void server_loop(server* server){
 
     while(server->active){
 
-        int received_events = epoll_wait(server->epoll_fd, server->events, server->max_events, -1); // infinitely wait for I/O events on the monitored descriptor (the socket!)
+        // infinitely wait for I/O events on the monitored descriptor (the socket!)
+        int received_events = epoll_wait(server->epoll_fd, server->connection_events, server->max_connection_events, -1); 
+
         for(int i = 0; i < received_events; i++){
 
-            if(server->events[i].data.fd == server->socket_fd){
+            if(server->connection_events[i].data.fd == server->socket_fd){
 
-                /* 
-                    a new connection is being notified!
-                    i should handle it!
-                */
-                struct sockaddr_in client_in;
-                int client_len = sizeof(client_in);
-                int client_fd = accept(server->socket_fd, (struct sockaddr *) &client_in, &client_len);
-
-                if(client_fd < 0){
-                    if(errno != EAGAIN || errno != EWOULDBLOCK){
-                        perror("error while accepting\n");
-                        exit(-1);
-                    }
-                }
-
-                /* 
-                    let's make a new epoll, only that, this time, we are going to monitor the client
-                    that just connected!
-                */
-                
-                /*
-                    client descriptor *must* be non-blocking because
-                    we need to wait for EAGAIN (or EWOULDBLOCK) to drain
-                    the request (and of course we need non-blocking io). 
-                */
-                make_nonblocking(client_fd);
-
-                struct epoll_event client_event;
-                
-                client_event.events = EPOLLIN | EPOLLET; // edge-triggered mode for the current descriptor (EAGAIN)
-                client_event.data.fd = client_fd;
-
-                if(epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0){ // adding a new epoll (EPOLL_CTL_ADD)
-                    perror("cannot add client descriptor to epoll");
-                    exit(-1);
-                }
-                                
-                // thanks for connecting!
-
-            }else{
-
-                /*
-                    someone else (a connected client) is notifying something!
-                    i should parse what they are writing!
-                */
-
-                int request_size = 0;
-                bzero(&buffer, MAX_REQUEST_SIZE);
-                ssize_t received_bytes = recv(events[i].data.fd, &buffer, sizeof(buffer), O_NONBLOCK);
-
-                if(received_bytes > 0){
-
-                    connection_context* ctx = malloc(sizeof(connection_context));
-                    context_init(ctx, MAX_REQUEST_SIZE);
-
-                    ctx->fd = events[i].data.fd;
-                    write_to_context(ctx, buffer, received_bytes);
-
-                    /*
-                        since we are in edge-triggered mode, we must consume the request at its 
-                        fullest before exiting this loop.
-                        to do so, we must read bytes until EAGAIN (or EWOULDBLOCK) isn't returned
-                    */
-                    while((received_bytes = recv(events[i].data.fd, &buffer, sizeof(buffer), O_NONBLOCK)) > 0){
-                        write_to_context(ctx, buffer, received_bytes);
-                        bzero(&buffer, MAX_REQUEST_SIZE);
-                        request_size += received_bytes;
-                        if(request_size > MAX_REQUEST_SIZE){
-                            // do something to tell the client that the request is too big 
-                            break;
-                        }
-                    }
-
-                    /*
-                        the while has ended so we stopped reading.
-                        we could've encountered an error, so we must check for it!
-                    */
-
-                    if(errno == EAGAIN || errno == EWOULDBLOCK){
-                        // we drained the descriptor
-                        handle_request(ctx);
-                    }else{
-
-                        /*
-                            something bad happened to our client, let's ignore its request
-                        */
-                        close(events[i].data.fd);
-                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
-                    
-                    }
-                    
-                }else if (received_bytes == 0){
-                    
-                    close(events[i].data.fd);
-                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
-
-                }
+                server_on_connection(server);
 
             }
 

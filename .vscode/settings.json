@@ -1,8 +1,14 @@
 {
     "files.associations": {
+        "*.twig": "html",
         "stdlib.h": "c",
         "unistd.h": "c",
         "server.h": "c",
-        "epoll.h": "c"
+        "epoll.h": "c",
+        "handler.h": "c",
+        "pthread.h": "c",
+        "connection_context.h": "c",
+        "errno.h": "c",
+        "in.h": "c"
     }
 }

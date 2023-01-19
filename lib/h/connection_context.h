@@ -11,3 +11,4 @@ typedef struct {
 } connection_context;
 
 extern void context_init(connection_context* context, unsigned int request_size);
+void write_to_context(connection_context* context, char* data, ssize_t received_bytes);
