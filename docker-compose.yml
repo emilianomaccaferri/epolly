@@ -1,0 +1,12 @@
+version: '3.9'
+
+services:
+  epolly:
+    cap_add:
+      - SYS_PTRACE # otherwise gdb won't attach
+    build:
+      context: .
+      network: host
+    ports: 
+      - "8080:8080"
+

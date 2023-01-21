@@ -1,5 +1,6 @@
 #include "h/handler.h"
 #include "h/connection_context.h"
+#include "h/http_request.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
@@ -14,6 +15,8 @@ void handle_request(connection_context* context){
 
     printf("handling descriptor #%d's request\n", context->fd);
     printf("the full request is: %s\n", context->data);
+    
+    http_request* req = http_request_create(context);
 
     if(context->length != 0){
         /* 
@@ -26,7 +29,6 @@ void handle_request(connection_context* context){
     }
 
     char buf[100];
-
     int bytes_written = sprintf(buf, "hello, descriptor %d", context->fd);
 
     write(context->fd, buf, bytes_written);
@@ -81,7 +83,25 @@ void *handler_process_request(void* h){
                 */
 
                 if(errno == EAGAIN || errno == EWOULDBLOCK){
-                    // we drained the descriptor
+                    /*
+                        we drained the descriptor (basically, we've read the whole request)
+                        now we have to actually reply to the request, so we set the event descriptor
+                        ready for writing (we attach the EPOLLOUT bit).
+
+                        note that we removed the EPOLLET flag, because we don't want to
+                        write the whole response for each request. 
+                        what we need is a way to write a non-blocking response, so we can write
+                        multiple responses concurrently.
+                    */
+                    struct epoll_event add_write_event;
+
+                    add_write_event.events = EPOLLIN | EPOLLOUT; 
+                    add_write_event.data.fd = ctx->fd;
+
+                    if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, ctx->fd, &add_write_event) < 0){
+                        perror("cannot set epoll descriptor ready for writing\n");
+                        exit(-1);
+                    }
                     handle_request(ctx);
                 }else{
 

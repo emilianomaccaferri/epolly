@@ -1,3 +1,4 @@
+
 TARGET = bin/epolly
 LIBS = -lm
 CC = gcc
@@ -17,7 +18,7 @@ HEADERS = $(wildcard *.h)
 .PRECIOUS: $(TARGET) $(OBJECTS)
 
 $(TARGET): $(OBJECTS)
-	$(CC) -g $(OBJECTS) -Wall $(LIBS) -o $@
+	$(CC) -pthread -g $(OBJECTS) -Wall $(LIBS) -o $@
 
 clean:
 	-rm -f lib/*.o

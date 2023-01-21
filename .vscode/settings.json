@@ -9,6 +9,8 @@
         "pthread.h": "c",
         "connection_context.h": "c",
         "errno.h": "c",
-        "in.h": "c"
+        "in.h": "c",
+        "http_request.h": "c",
+        "fcntl.h": "c"
     }
 }
