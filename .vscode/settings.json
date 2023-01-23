@@ -11,6 +11,7 @@
         "errno.h": "c",
         "in.h": "c",
         "http_request.h": "c",
-        "fcntl.h": "c"
+        "fcntl.h": "c",
+        "utils.h": "c"
     }
 }

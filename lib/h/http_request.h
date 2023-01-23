@@ -5,12 +5,16 @@
 */
 #include <stdio.h>
 #include "connection_context.h"
+typedef enum {
+    GET
+} http_method;
 
 typedef struct {
     char* bytes;
     size_t length;
     int lines_num;
     char** lines;
+    http_method method;
 } http_request;
 
 extern http_request* http_request_create(connection_context* ctx);

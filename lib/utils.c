@@ -28,8 +28,11 @@ int count_lines(char* bytes, size_t byte_len){
     int count = 0;
 
     copy = memcpy(copy, bytes, byte_len);
-    while((next = strchr(copy, '\n'))){
+    next = strchr(copy, '\n');
+
+    while(next != NULL){
         count++;
+        next = strchr(next + 1, '\n');
     }
 
     free(copy);
@@ -39,13 +42,19 @@ int count_lines(char* bytes, size_t byte_len){
 
 char** bytes_to_lines(char* bytes, size_t byte_len, int lines_num){
 
+    unsigned int i = 0;
     char** lines = (char**) malloc(sizeof(char*) * lines_num);
     char* copy = malloc(sizeof(char) * byte_len); // strtok_r destroys the string too :(
-    char* temp, *part = strtok_r(copy, "\n", &temp);
+    char* temp;
+    
+    strcpy(copy, bytes);
+    
+    char* part = strtok_r(copy, "\n", &temp);
     
     do{
-        lines = part;
-        lines += sizeof(char*);
+        lines[i] = malloc(sizeof(char) * strlen(part));
+        strcpy(lines[i], part);
+        i++;
     }while ((part = strtok_r(NULL, "\n", &temp)) != NULL);
 
     return lines;
