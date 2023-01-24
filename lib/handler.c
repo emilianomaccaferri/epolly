@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <string.h>
 
-void handle_request(connection_context* context){
+http_response* build_response(connection_context* context){
 
     printf("handling descriptor #%d's request\n", context->fd);
 
@@ -32,23 +32,23 @@ void handle_request(connection_context* context){
 
     if(!req){
         // invalid http request
-        res = http_response_create(400, "HTTP/1.1 400 Bad Request\nContent-Type: text/html", "<html><h1>400 - Bad Request </h1></html>");
+        res = http_response_bad_request(context->fd);
     }
     else if(errno == 1){
         // method is unimplemented (we only have GET)
-        res = http_response_create(400, "HTTP/1.1 400 Bad Request\nContent-Type: text/html", "<html><h1>400 - Bad Request </h1></html>");
+        res = http_response_uninmplemented_method(context->fd);
     }else{
-        char buf[100];
-        sprintf(buf, "<html><h1>200 OK - served on descriptor %d by thread #%ld</h1></html>", context->fd, pthread_self());
-        res = http_response_create(200, "HTTP/1.1 200 OK\nContent-Type: text/html\nConnection: close", buf);
+        res = http_response_create(200, NULL, "<html><h1>200 OK - hello!</h1></html>", context->fd);
     }
 
     /*
-        let's stream the response to the socket! 
+        we are ready to stream the response to the socket! 
+        to actually stream something we need to save the socket's fd (check comment 1 in h/http_response.h)
+        so that when we are back in the epoll loop we have a valid file descriptor to stream to 
+        (we can't use both the "fd" and the "ptr" attributes when using epolls)
     */
 
-    write(context->fd, http_response_stringify(res), res->response_length + 1);
-    close(context->fd);
+    return res;
 
 }
 
@@ -84,7 +84,7 @@ void *handler_process_request(void* h){
                         fullest before exiting this loop.
                         to do so, we must read bytes until EAGAIN (or EWOULDBLOCK) isn't returned
                     */
-                    while((received_bytes = recv(current_handler->events[i].data.fd, current_handler->request_buffer, current_handler->request_buffer_size, O_NONBLOCK)) > 0){
+                    while((received_bytes = recv(ctx->fd, current_handler->request_buffer, current_handler->request_buffer_size, O_NONBLOCK)) > 0){
 
                         write_to_context(ctx, current_handler->request_buffer, received_bytes);
                         bzero(current_handler->request_buffer, current_handler->request_buffer_size);
@@ -113,16 +113,29 @@ void *handler_process_request(void* h){
                             what we need is a way to write a non-blocking response, so we can write
                             multiple responses concurrently.
                         */
-                        struct epoll_event add_write_event;
+                        
+                        http_response* res = build_response(ctx);
 
-                        add_write_event.events = EPOLLIN | EPOLLOUT; 
-                        add_write_event.data.fd = ctx->fd;
+                        struct epoll_event add_write_event;
+                        add_write_event.events = EPOLLOUT; 
+                        add_write_event.data.ptr = res;
+
+                        /*
+                            on the same file descriptor we can attach everything, we can also listen to changes on a certain
+                            data structure! 
+                            that's what we did with the "ptr" attribute of the epoll_event: 
+                            we put our response there so, when there is data being written on that data structure, the epoll will trigger
+                            a new event!
+                            we will write data as soon as we process the request, so the epoll will trigger instantly.
+
+                            this method makes us able to write the response chunk by chunk (check (**) down below), without blocking other requests in the loop!
+                        */
 
                         if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, ctx->fd, &add_write_event) < 0){
                             perror("cannot set epoll descriptor ready for writing\n");
                             exit(-1);
                         }
-                        handle_request(ctx);
+
                     }else{
 
                         /*
@@ -142,7 +155,48 @@ void *handler_process_request(void* h){
                 }
             }else if(events == EPOLLOUT){
 
-                printf("pollout\n");
+                /*
+                    (**) here we are, consuming what we wrote (an http response) on the epoll! 
+                    this part of the loop enables us, as already mentioned, to stream the http response to the client without blocking 
+                    other input or output streams!
+                    with the use of the "stream_ptr" variable (check lib/h/http_response.h, comment 2) we can efficiently keep track
+                    of the chunk we are writing to the client, incrementing it whenever we write some bytes!
+
+                    note how we write data: we use the streamed_response->stringified buffer + the stream_ptr (basically an offset), 
+                    because in this way we keep track of what we already wrote (by summing stream_ptr).
+                */
+
+                http_response* streamed_response = (http_response*) current_handler->events[i].data.ptr;
+                int written_bytes = send(
+                    streamed_response->socket, 
+                    streamed_response->stringified + streamed_response->stream_ptr, 
+                    streamed_response->full_length,
+                    0
+                );
+                if(written_bytes >= 0){
+                    streamed_response->stream_ptr += written_bytes; // here we update our pointer!
+                    if(streamed_response->stream_ptr == streamed_response->full_length){
+                        /*
+                            we wrote everything, so we need to set the epoll back to EPOLLIN, 
+                            so that we can read more requests from the socket!
+                        */
+
+                        struct epoll_event back_to_reading;
+                        back_to_reading.data.fd = streamed_response->socket;
+                        back_to_reading.events = EPOLLIN | EPOLLET; // edge triggered again
+                        if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, streamed_response->socket, &back_to_reading) < 0){
+                            perror("cannot reset socket to read state");
+                        }
+
+                    }
+                }else if(written_bytes == -1){
+                    if(errno == EAGAIN || errno == EWOULDBLOCK){
+                        // the socket is not available yet
+                        continue;
+                    }else{
+                        perror("send failed");
+                    }
+                }
 
             }else{
                 /*

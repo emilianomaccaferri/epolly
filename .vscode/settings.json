@@ -12,6 +12,7 @@
         "in.h": "c",
         "http_request.h": "c",
         "fcntl.h": "c",
-        "utils.h": "c"
+        "utils.h": "c",
+        "string.h": "c"
     }
 }
