@@ -44,9 +44,6 @@ int http_request_create(http_request* req, connection_context* ctx){
     if(http_request_parse_filename(req) < 0){
         errno = 2;
     }
-    if(strncmp("/", req->filename, req->filename_actual_length) == 0){
-    }
-
     return 0;
 
 }
