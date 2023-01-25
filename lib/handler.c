@@ -2,6 +2,7 @@
 #include "h/connection_context.h"
 #include "h/http_request.h"
 #include "h/http_response.h"
+#include "h/utils.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
@@ -17,8 +18,10 @@ http_response* build_response(connection_context* context){
 
     printf("handling descriptor #%d's request\n", context->fd);
 
-    http_request* req = http_request_create(context);
+    http_request* req = malloc(sizeof(http_request));
     http_response* res;
+
+    int req_err = http_request_create(req, context);
 
     if(context->length != 0){
         /* 
@@ -30,15 +33,33 @@ http_response* build_response(connection_context* context){
         context->length = 0; 
     }
 
-    if(!req){
-        // invalid http request
-        res = http_response_bad_request(context->fd);
-    }
-    else if(errno == 1){
-        // method is unimplemented (we only have GET)
-        res = http_response_uninmplemented_method(context->fd);
+    if(req_err != 0){
+        printf("error while replying\n");
+        switch(errno){
+            case -1:
+                res = http_response_bad_request(context->fd);
+            break;
+            case 1:
+                // method is unimplemented (we only have GET)
+                res = http_response_uninmplemented_method(context->fd);
+            break;
+            case 2: 
+                // filename too long
+                res = http_response_filename_too_long(context->fd);
+            break;
+            default: res = http_response_internal_server_error(context->fd);
+        }
     }else{
-        res = http_response_create(200, NULL, "<html><h1>200 OK - hello!</h1></html>", context->fd);
+        
+        int fd = open(req->filename, O_RDONLY);
+        if(fd < 0){
+            res = http_response_not_found(context->fd);
+        }else{
+            char* mime_type = filename_to_mimetype_header(req->filename);
+            char* stringified_file = read_whole_file(fd);
+            res = http_response_create(200, mime_type, stringified_file, context->fd);
+        }
+
     }
 
     /*
@@ -187,6 +208,7 @@ void *handler_process_request(void* h){
                         if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, streamed_response->socket, &back_to_reading) < 0){
                             perror("cannot reset socket to read state");
                         }
+                        close(back_to_reading.data.fd);
 
                     }
                 }else if(written_bytes == -1){

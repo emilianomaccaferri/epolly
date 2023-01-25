@@ -15,6 +15,9 @@ typedef struct {
     int lines_num;
     char** lines;
     http_method method;
+    char* filename;
+    int filename_max_length;
+    int filename_actual_length;
 } http_request;
 
-extern http_request* http_request_create(connection_context* ctx);
+extern int http_request_create(http_request* req, connection_context* ctx);

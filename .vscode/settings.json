@@ -13,6 +13,7 @@
         "http_request.h": "c",
         "fcntl.h": "c",
         "utils.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "http_response.h": "c"
     }
 }

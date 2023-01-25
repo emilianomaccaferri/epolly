@@ -5,6 +5,8 @@ typedef struct {
     int content_length;
     int headers_length;
     int response_length;
+    int date_header_length;
+    char* date_header;
     int full_length;
     /*
         (1. )
@@ -28,4 +30,7 @@ typedef struct {
 extern http_response* http_response_create(int status, char* headers, char* body, int socket_fd);
 extern http_response* http_response_bad_request(int socket_fd);
 extern http_response* http_response_uninmplemented_method(int socket_fd);
+extern http_response* http_response_filename_too_long(int socket_fd);
+extern http_response* http_response_internal_server_error(int socket_fd);
+extern http_response* http_response_not_found(int socket_fd);
 extern char* http_response_stringify(http_response* res);

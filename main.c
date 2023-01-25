@@ -1,5 +1,5 @@
 #define MAX_EVENTS 128
-#define NUM_HANDLERS 4 // 4 threads that handle epolls
+#define NUM_HANDLERS 1 // 4 threads that handle epolls
 #define PORT 8080
 #define MAX_EPOLL_HANDLER_QUEUE_SIZE 2048
 #define REQUEST_BUFFER_SIZE 2048
