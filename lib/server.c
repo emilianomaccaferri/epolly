@@ -78,7 +78,7 @@ server* server_init(
 
     http_server->max_connection_events = max_events;
     http_server->socket_fd = create_socket(port);
-    http_server->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    http_server->epoll_fd = epoll_create1(0);
     http_server->connection_events = malloc(sizeof(struct epoll_event) * http_server->max_connection_events);
     http_server->active = false;
     http_server->num_handlers = num_handlers;
@@ -98,7 +98,7 @@ server* server_init(
     // add an epoll to the kernel
     if(epoll_ctl(http_server->epoll_fd, EPOLL_CTL_ADD, http_server->socket_fd, &on_socket_conn) < 0){
 
-        printf("cannot add epoll on socket\n");
+        perror("cannot add epoll on socket\n");
         exit(-1);
 
     }
@@ -148,13 +148,14 @@ void server_on_connection(server* server){
     client_event.data.fd = client_fd;
 
     handler selected_handler = server->handlers[server->selector];
+    server->selector = (server->selector + 1) % server->num_handlers;
 
     if(epoll_ctl(selected_handler.epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0){ // adding a new epoll (EPOLL_CTL_ADD)
         perror("cannot add client descriptor to epoll");
         exit(-1);
     }
 
-    server->selector = (server->selector + 1) % server->num_handlers;
+    
                     
     // thanks for connecting!
 

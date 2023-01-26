@@ -16,8 +16,6 @@
 
 http_response* build_response(connection_context* context){
 
-    printf("handling descriptor #%d's request\n", context->fd);
-
     http_request* req = malloc(sizeof(http_request));
     http_response* res;
 
@@ -34,7 +32,6 @@ http_response* build_response(connection_context* context){
     }
 
     if(req_err != 0){
-        printf("error while replying\n");
         switch(errno){
             case -1:
                 res = http_response_bad_request(context->fd);
@@ -152,9 +149,9 @@ void *handler_process_request(void* h){
                             this method makes us able to write the response chunk by chunk (check (**) down below), without blocking other requests in the loop!
                         */
 
-                        if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, ctx->fd, &add_write_event) < 0){
+                        if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, current_handler->events[i].data.fd, &add_write_event) < 0){
                             perror("cannot set epoll descriptor ready for writing\n");
-                            exit(-1);
+                            continue;
                         }
 
                     }else{
@@ -162,16 +159,15 @@ void *handler_process_request(void* h){
                         /*
                             something bad happened to our client, let's ignore its request
                         */
-                        close(current_handler->events[i].data.fd);
                         epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_DEL, current_handler->events[i].data.fd, NULL);
-                    
+                        close(current_handler->events[i].data.fd);
+
                     }
                     
                 }else if (received_bytes == 0){
                     
-                    printf("client on descriptor %d disconnected\n", current_handler->events[i].data.fd);
-                    close(current_handler->events[i].data.fd);
                     epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_DEL, current_handler->events[i].data.fd, NULL);
+                    close(current_handler->events[i].data.fd);
 
                 }
             }else if(events == EPOLLOUT){
@@ -198,17 +194,13 @@ void *handler_process_request(void* h){
                     streamed_response->stream_ptr += written_bytes; // here we update our pointer!
                     if(streamed_response->stream_ptr == streamed_response->full_length){
                         /*
-                            we wrote everything, so we need to set the epoll back to EPOLLIN, 
-                            so that we can read more requests from the socket!
+                            we wrote everything, so we need to close the connection (we only implemented Connection: close)
                         */
 
-                        struct epoll_event back_to_reading;
-                        back_to_reading.data.fd = streamed_response->socket;
-                        back_to_reading.events = EPOLLIN | EPOLLET; // edge triggered again
-                        if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_MOD, streamed_response->socket, &back_to_reading) < 0){
-                            perror("cannot reset socket to read state");
+                        if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_DEL, streamed_response->socket, NULL) < 0){
+                            perror("cannot close epoll fd\n");
                         }
-                        close(back_to_reading.data.fd);
+                        close(streamed_response->socket);
 
                     }
                 }else if(written_bytes == -1){
@@ -224,8 +216,11 @@ void *handler_process_request(void* h){
                 /*
                     something bad happened to our client, let's ignore its request
                 */
+                if(epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_DEL, current_handler->events[i].data.fd, NULL) < 0){
+                    perror("cannot close epoll fd\n");
+                }
                 close(current_handler->events[i].data.fd);
-                epoll_ctl(current_handler->epoll_fd, EPOLL_CTL_DEL, current_handler->events[i].data.fd, NULL);
+
             }
         }
     }
@@ -239,10 +234,10 @@ void handler_init(handler* handler, int max_events, int buf_size, int max_reques
     handler->thread = (pthread_t*) malloc(sizeof(pthread_t));
     handler->active = true;
     handler->max_events = max_events;
-    handler->epoll_fd = epoll_create(max_events);
+    handler->epoll_fd = epoll_create1(0);
     handler->request_buffer_size = buf_size;
     handler->max_request_size = max_request_size;
-    handler->events = malloc(sizeof(struct epoll_event) * handler->max_events);
+    handler->events = malloc(sizeof(struct epoll_event) * max_events);
     
     pthread_create(handler->thread, NULL, handler_process_request, (void*) handler);
 

@@ -14,6 +14,7 @@
         "fcntl.h": "c",
         "utils.h": "c",
         "string.h": "c",
-        "http_response.h": "c"
+        "http_response.h": "c",
+        "stdio.h": "c"
     }
 }

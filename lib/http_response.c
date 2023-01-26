@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <time.h>
 
-char* default_headers = "Connection: Keep-Alive\nServer: epolly/0.0.1\n";
+char* default_headers = "Connection: close\nServer: epolly/0.0.1\n";
 
 static char* stringify_status(int status);
 
