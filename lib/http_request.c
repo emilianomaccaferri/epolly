@@ -6,7 +6,7 @@
 #include <errno.h>
 
 #define FILENAME_MAX_LEN 1024
-#define WWW_PATH "/home/macca/stuff/epolly/www"
+#define WWW_PATH ""
 
 static int http_request_parse_method(http_request* req);
 static int http_request_parse_filename(http_request* req);
