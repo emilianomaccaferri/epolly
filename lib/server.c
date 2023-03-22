@@ -128,6 +128,7 @@ void server_on_connection(server* server){
             perror("error while accepting\n");
             exit(-1);
         }
+        return;
     }
 
     /* 
